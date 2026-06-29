@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parent Portal - Lords Skill Academy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .fade-enter { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .slide-up { animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 70px; z-index: 40; }
+        .sidebar { transition: transform 0.3s ease; }
+        .status-badge { font-size: 0.75rem; font-weight: 600; }
+        .progress-ring { transform: rotate(-90deg); transform-origin: 50% 50%; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script>
+        // ===== STATE MANAGEMENT =====
+        const appState = {
+            token: localStorage.getItem('token'),
+            parent: JSON.parse(localStorage.getItem('parent') || 'null'),
+            students: [],
+            selectedStudent: JSON.parse(localStorage.getItem('selectedStudent') || 'null'),
+            currentTab: 'dashboard',
+            loading: false,
+            error: null
+        };
+
+        const API = 'http://localhost:5000/api';
+
+        // ===== UTILITY FUNCTIONS =====
+        const render = () => document.getElementById('root').innerHTML = currentView();
+        
+        const setError = (msg) => {
+            appState.error = msg;
+            setTimeout(() => { appState.error = null; render(); }, 4000);
+            render();
+        };
+
+        const logout = () => {
+            appState.token = null;
+            appState.parent = null;
+            appState.students = [];
+            appState.selectedStudent = null;
+            localStorage.clear();
+            render();
+        };
+
+        const goto = (tab) => {
+            appState.currentTab = tab;
+            render();
+        };
+
+        // ===== API CALLS =====
+        const login = async (email, password) => {
+            try {
+                appState.loading = true;
+                render();
+                const res = await axios.post(`${API}/auth/login`, { email, password });
+                appState.token = res.data.token;
+                appState.parent = res.data.parent;
+                localStorage.setItem('token', res.data.token);
+                localStorage.setItem('parent', JSON.stringify(res.data.parent));
+                await fetchStudents();
+                if (appState.students.length === 1) {
+                    selectStudent(appState.students[0]._id);
+                }
+                render();
+            } catch (err) {
+                setError(err.response?.data?.message || 'Login failed');
+            }
+        };
+
+        const fetchStudents = async () => {
+            try {
+                const res = await axios.get(`${API}/parent/students`, {
+                    headers: { Authorization: `Bearer ${appState.token}` }
+                });
+                appState.students = res.data;
+            } catch (err) {
+                setError('Failed to fetch students');
+            }
+        };
+
+        const selectStudent = (studentId) => {
+            const student = appState.students.find(s => s._id === studentId);
+            if (student) {
+                appState.selectedStudent = student;
+                localStorage.setItem('selectedStudent', JSON.stringify(student));
+                appState.currentTab = 'dashboard';
+                render();
+            }
+        };
+
+        const fetchStudentDetails = async (studentId) => {
+            try {
+                const res = await axios.get(`${API}/student/${studentId}`, {
+                    headers: { Authorization: `Bearer ${appState.token}` }
+                });
+                appState.selectedStudent = res.data;
+                localStorage.setItem('selectedStudent', JSON.stringify(res.data));
+                render();
+            } catch (err) {
+                setError('Failed to fetch student details');
+            }
+        };
+
+        // ===== UI COMPONENTS =====
+        const LoginPage = () => `
+            <div class="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
+                <div class="md:flex w-full max-w-5xl gap-8 md:gap-0">
+                    <!-- Left Pane: Branding (Hidden on Mobile) -->
+                    <div class="hidden md:flex md:w-1/2 flex-col justify-center text-white pr-8">
+                        <h1 class="text-5xl font-bold mb-4">Lords Skill Academy</h1>
+                        <p class="text-xl text-blue-100 mb-8">Empowering Parents, Educating Students</p>
+                        <div class="space-y-4">
+                            <div class="flex items-start gap-3">
+                                <span class="text-2xl">📊</span>
+                                <div>
+                                    <h3 class="font-semibold">Real-time Progress Tracking</h3>
+                                    <p class="text-sm text-blue-100">Monitor your child's attendance and course progress</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <span class="text-2xl">🎓</span>
+                                <div>
+                                    <h3 class="font-semibold">Syllabus Insights</h3>
+                                    <p class="text-sm text-blue-100">View detailed course modules and completion status</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <span class="text-2xl">🔒</span>
+                                <div>
+                                    <h3 class="font-semibold">Secure Access</h3>
+                                    <p class="text-sm text-blue-100">JWT-based authentication for data privacy</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Pane: Login Form -->
+                    <div class="w-full md:w-1/2 bg-white rounded-2xl shadow-2xl p-8 fade-enter">
+                        <h2 class="text-3xl font-bold text-gray-800 mb-2 text-center">Parent Login</h2>
+                        <p class="text-gray-500 text-center mb-8">Access your child's academy profile</p>
+                        
+                        ${appState.error ? `<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm">${appState.error}</div>` : ''}
+                        
+                        <form onsubmit="event.preventDefault(); handleLogin()" class="space-y-5">
+                            <div>
+                                <label class="block text-gray-700 font-semibold mb-2">Email Address</label>
+                                <input type="email" id="email" placeholder="parent@example.com" 
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition" required>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 font-semibold mb-2">Password</label>
+                                <div class="relative">
+                                    <input type="password" id="password" placeholder="••••••••" 
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition" required>
+                                    <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3 top-3 text-gray-500 hover:text-gray-700">
+                                        <span id="pwd-toggle">👁️</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 ${appState.loading ? 'opacity-50 cursor-not-allowed' : ''}" ${appState.loading ? 'disabled' : ''}>
+                                ${appState.loading ? 'Logging in...' : 'Login'}
+                            </button>
+                        </form>
+
+                        <div class="mt-6 text-center text-gray-600 text-sm">
+                            <p>Demo Credentials:</p>
+                            <p class="font-mono text-xs mt-2 bg-gray-100 p-2 rounded">parent1@lords.com / password123</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const ProfileSelector = () => `
+            <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full fade-enter">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Select Your Child</h2>
+                    <div class="space-y-3">
+                        ${appState.students.map(s => `
+                            <button onclick="selectStudent('${s._id}')" 
+                                class="w-full p-4 border-2 border-gray-200 hover:border-blue-500 hover:bg-blue-50 rounded-lg text-left transition">
+                                <div class="font-bold text-gray-800">${s.name}</div>
+                                <div class="text-sm text-gray-500">${s.course_title} • Roll: ${s.roll_number}</div>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const Dashboard = () => {
+            const student = appState.selectedStudent;
+            const attendance = student.attendance_logs || [];
+            const present = attendance.filter(a => a.status === 'Present').length;
+            const absent = attendance.filter(a => a.status === 'Absent').length;
+            const attendanceRate = attendance.length > 0 ? Math.round((present / attendance.length) * 100) : 0;
+            const courseProgress = Math.round((student.days_completed / student.duration_days) * 100);
+
+            return `
+                <div class="space-y-6">
+                    <!-- Header Card -->
+                    <div class="bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-xl p-6 shadow-lg">
+                        <h1 class="text-2xl md:text-3xl font-bold">${student.name}</h1>
+                        <p class="text-blue-100 text-sm md:text-base">${student.course_title} • Roll: ${student.roll_number}</p>
+                        <div class="mt-4 text-sm text-blue-100">${student.duration_days} days course • ${student.days_completed} days completed</div>
+                    </div>
+
+                    <!-- Progress Metrics -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <!-- Attendance Meter -->
+                        <div class="bg-white rounded-lg shadow p-6 text-center">
+                            <div class="w-20 h-20 mx-auto mb-3 relative">
+                                <svg class="w-full h-full">
+                                    <circle cx="40" cy="40" r="35" fill="none" stroke="#e5e7eb" stroke-width="8"/>
+                                    <circle cx="40" cy="40" r="35" fill="none" stroke="#10b981" stroke-width="8" 
+                                        stroke-dasharray="${(attendanceRate / 100) * 219.91}" stroke-dashoffset="0" class="progress-ring"/>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-lg font-bold text-gray-800">${attendanceRate}%</span>
+                                </div>
+                            </div>
+                            <p class="text-gray-600 font-semibold">Attendance</p>
+                            <p class="text-xs text-gray-500 mt-1">${present} present</p>
+                        </div>
+
+                        <!-- Course Progress -->
+                        <div class="bg-white rounded-lg shadow p-6 text-center">
+                            <div class="w-20 h-20 mx-auto mb-3 relative">
+                                <svg class="w-full h-full">
+                                    <circle cx="40" cy="40" r="35" fill="none" stroke="#e5e7eb" stroke-width="8"/>
+                                    <circle cx="40" cy="40" r="35" fill="none" stroke="#3b82f6" stroke-width="8" 
+                                        stroke-dasharray="${(courseProgress / 100) * 219.91}" stroke-dashoffset="0" class="progress-ring"/>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-lg font-bold text-gray-800">${courseProgress}%</span>
+                                </div>
+                            </div>
+                            <p class="text-gray-600 font-semibold">Course</p>
+                            <p class="text-xs text-gray-500 mt-1">${student.days_completed}/${student.duration_days} days</p>
+                        </div>
+
+                        <!-- Days Remaining -->
+                        <div class="bg-white rounded-lg shadow p-6 text-center">
+                            <div class="text-4xl font-bold text-yellow-600 mb-2">${student.duration_days - student.days_completed}</div>
+                            <p class="text-gray-600 font-semibold">Days Left</p>
+                            <p class="text-xs text-gray-500 mt-1">of ${student.duration_days}</p>
+                        </div>
+
+                        <!-- Modules Locked -->
+                        <div class="bg-white rounded-lg shadow p-6 text-center">
+                            <div class="text-4xl font-bold text-purple-600 mb-2">${(student.syllabus_modules || []).filter(m => m.status === 'Locked').length}</div>
+                            <p class="text-gray-600 font-semibold">Locked</p>
+                            <p class="text-xs text-gray-500 mt-1">Modules</p>
+                        </div>
+                    </div>
+
+                    <!-- Announcements -->
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4">📢 Academy Updates</h3>
+                        <div class="space-y-3">
+                            <div class="border-l-4 border-blue-500 pl-4 py-2">
+                                <p class="text-sm font-semibold text-gray-700">Midterm Exams Starting</p>
+                                <p class="text-xs text-gray-500 mt-1">Exams begin next week. Encourage consistent study habits.</p>
+                            </div>
+                            <div class="border-l-4 border-green-500 pl-4 py-2">
+                                <p class="text-sm font-semibold text-gray-700">Great Attendance!</p>
+                                <p class="text-xs text-gray-500 mt-1">Your child has maintained 85%+ attendance this month.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const Attendance = () => {
+            const student = appState.selectedStudent;
+            const logs = student.attendance_logs || [];
+            const currentMonth = new Date().getMonth();
+            const currentYear = new Date().getFullYear();
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+
+            let dates = [];
+            for (let i = 0; i < firstDayOfMonth; i++) dates.push(null);
+            for (let i = 1; i <= daysInMonth; i++) dates.push(i);
+
+            const getLogForDate = (day) => {
+                const dateStr = new Date(currentYear, currentMonth, day).toISOString().split('T')[0];
+                return logs.find(l => l.date.split('T')[0] === dateStr);
+            };
+
+            const getStatusColor = (status) => {
+                if (status === 'Present') return 'bg-green-100 text-green-700 border-green-300';
+                if (status === 'Absent') return 'bg-red-100 text-red-700 border-red-300';
+                if (status === 'Late') return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+                return 'bg-gray-100 text-gray-600 border-gray-300';
+            };
+
+            return `
+                <div class="space-y-6">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">📅 Attendance Calendar</h2>
+                        
+                        <!-- Calendar -->
+                        <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                            <div class="text-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-700">${new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}</h3>
+                            </div>
+                            <div class="grid grid-cols-7 gap-2 mb-3">
+                                ${'SMTWTFS'.split('').map(d => `<div class="text-center font-bold text-gray-600 text-sm">${d}</div>`).join('')}
+                            </div>
+                            <div class="grid grid-cols-7 gap-2">
+                                ${dates.map((day, idx) => {
+                                    if (!day) return `<div></div>`;
+                                    const log = getLogForDate(day);
+                                    const statusClass = log ? getStatusColor(log.status) : 'bg-gray-100 text-gray-400 border-gray-300';
+                                    const remarks = log?.remarks || '';
+                                    return `
+                                        <div class="aspect-square flex items-center justify-center border-2 rounded-lg cursor-pointer hover:shadow-md transition ${statusClass}" 
+                                            onclick="alert('${day} - ${log?.status || 'No data'}${remarks ? '\\nRemarks: ' + remarks : ''}')">
+                                            <span class="font-semibold">${day}</span>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Statistics -->
+                        <div class="grid grid-cols-3 gap-4">
+                            <div class="text-center">
+                                <div class="text-3xl font-bold text-green-600">${logs.filter(l => l.status === 'Present').length}</div>
+                                <p class="text-sm text-gray-600 mt-1">Present</p>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-3xl font-bold text-red-600">${logs.filter(l => l.status === 'Absent').length}</div>
+                                <p class="text-sm text-gray-600 mt-1">Absent</p>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-3xl font-bold text-yellow-600">${logs.filter(l => l.status === 'Late').length}</div>
+                                <p class="text-sm text-gray-600 mt-1">Late</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const Syllabus = () => {
+            const student = appState.selectedStudent;
+            const modules = student.syllabus_modules || [];
+
+            return `
+                <div class="space-y-4">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">📚 Syllabus & Modules</h2>
+                    ${modules.map((mod, idx) => `
+                        <div class="bg-white rounded-lg shadow hover:shadow-lg transition">
+                            <button class="w-full p-6 text-left flex items-center justify-between hover:bg-gray-50" 
+                                onclick="toggleAccordion(${idx})">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-800">${mod.module_name}</h3>
+                                    <div class="mt-2 flex gap-2 flex-wrap">
+                                        <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                                            mod.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                            mod.status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
+                                            'bg-gray-100 text-gray-700'
+                                        }">${mod.status}</span>
+                                        <span class="inline-block text-xs text-gray-500">${mod.progress_pct}% Complete</span>
+                                    </div>
+                                </div>
+                                <span id="arrow-${idx}" class="text-2xl transition">▼</span>
+                            </button>
+                            <div id="content-${idx}" class="max-h-0 overflow-hidden transition-all duration-300">
+                                <div class="px-6 pb-6 pt-0 border-t border-gray-200">
+                                    <div class="space-y-3 mt-4">
+                                        ${['Topic 1: Fundamentals', 'Topic 2: Advanced Concepts', 'Topic 3: Practical Application', 'Project: Real-world Implementation'].map((topic, i) => `
+                                            <div class="flex items-start gap-3">
+                                                <input type="checkbox" ${i < Math.ceil(mod.progress_pct / 25) ? 'checked' : ''} class="mt-1">
+                                                <label class="text-sm text-gray-700">${topic}</label>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <div class="mt-4">
+                                        <div class="flex justify-between text-xs font-semibold text-gray-600 mb-1">
+                                            <span>Progress</span>
+                                            <span>${mod.progress_pct}%</span>
+                                        </div>
+                                        <div class="w-full bg-gray-200 rounded-full h-2">
+                                            <div class="bg-blue-600 h-2 rounded-full transition-all" style="width: ${mod.progress_pct}%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        };
+
+        const MainApp = () => `
+            <div class="flex h-screen bg-gray-50">
+                <!-- Sidebar (Desktop Only) -->
+                <div class="hidden md:flex md:w-64 bg-white shadow-lg flex-col sidebar">
+                    <div class="p-6 bg-gradient-to-r from-blue-600 to-blue-800 text-white">
+                        <h1 class="text-2xl font-bold">Lords</h1>
+                        <p class="text-xs text-blue-100">Skill Academy</p>
+                    </div>
+                    <nav class="flex-1 p-4 space-y-2">
+                        <button onclick="goto('dashboard')" class="w-full text-left px-4 py-3 rounded-lg ${appState.currentTab === 'dashboard' ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700 hover:bg-gray-100'} transition">
+                            📊 Dashboard
+                        </button>
+                        <button onclick="goto('attendance')" class="w-full text-left px-4 py-3 rounded-lg ${appState.currentTab === 'attendance' ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700 hover:bg-gray-100'} transition">
+                            📅 Attendance
+                        </button>
+                        <button onclick="goto('syllabus')" class="w-full text-left px-4 py-3 rounded-lg ${appState.currentTab === 'syllabus' ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700 hover:bg-gray-100'} transition">
+                            📚 Syllabus
+                        </button>
+                    </nav>
+                    <div class="p-4 border-t">
+                        <button onclick="logout()" class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition font-semibold">
+                            🚪 Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main Content -->
+                <div class="flex-1 flex flex-col overflow-hidden pb-20 md:pb-0">
+                    <!-- Top Bar (Mobile Only) -->
+                    <div class="md:hidden bg-white shadow p-4 flex justify-between items-center">
+                        <div>
+                            <h1 class="font-bold text-gray-800">${appState.selectedStudent.name}</h1>
+                            <p class="text-xs text-gray-500">${appState.selectedStudent.course_title}</p>
+                        </div>
+                        <button onclick="logout()" class="text-red-600 text-lg">🚪</button>
+                    </div>
+
+                    <!-- Content Area -->
+                    <div class="flex-1 overflow-y-auto">
+                        <div class="p-4 md:p-8 max-w-6xl mx-auto">
+                            ${appState.currentTab === 'dashboard' ? Dashboard() : ''}
+                            ${appState.currentTab === 'attendance' ? Attendance() : ''}
+                            ${appState.currentTab === 'syllabus' ? Syllabus() : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Navigation (Mobile Only) -->
+                <div class="md:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl flex justify-around items-center bottom-nav">
+                    <button onclick="goto('dashboard')" class="flex-1 flex flex-col items-center justify-center py-3 ${appState.currentTab === 'dashboard' ? 'text-blue-600 border-t-4 border-blue-600' : 'text-gray-600'}">
+                        📊
+                    </button>
+                    <button onclick="goto('attendance')" class="flex-1 flex flex-col items-center justify-center py-3 ${appState.currentTab === 'attendance' ? 'text-blue-600 border-t-4 border-blue-600' : 'text-gray-600'}">
+                        📅
+                    </button>
+                    <button onclick="goto('syllabus')" class="flex-1 flex flex-col items-center justify-center py-3 ${appState.currentTab === 'syllabus' ? 'text-blue-600 border-t-4 border-blue-600' : 'text-gray-600'}">
+                        📚
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // ===== VIEW ROUTING =====
+        const currentView = () => {
+            if (!appState.token) return LoginPage();
+            if (appState.students.length > 1 && !appState.selectedStudent) {
+                return `${ProfileSelector()}${MainApp()}`;
+            }
+            return MainApp();
+        };
+
+        // ===== EVENT HANDLERS =====
+        const handleLogin = () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            if (email && password) login(email, password);
+        };
+
+        const togglePasswordVisibility = () => {
+            const pwd = document.getElementById('password');
+            const toggle = document.getElementById('pwd-toggle');
+            if (pwd.type === 'password') {
+                pwd.type = 'text';
+                toggle.textContent = '🙈';
+            } else {
+                pwd.type = 'password';
+                toggle.textContent = '👁️';
+            }
+        };
+
+        const toggleAccordion = (idx) => {
+            const content = document.getElementById(`content-${idx}`);
+            const arrow = document.getElementById(`arrow-${idx}`);
+            if (content.style.maxHeight === '0px' || !content.style.maxHeight) {
+                content.style.maxHeight = content.scrollHeight + 'px';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                content.style.maxHeight = '0px';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        };
+
+        // Initialize
+        if (appState.token) {
+            fetchStudents().then(render);
+        } else {
+            render();
+        }
+    </script>
+</body>
+</html>
